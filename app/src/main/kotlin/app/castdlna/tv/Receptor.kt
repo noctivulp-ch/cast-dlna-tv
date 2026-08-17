@@ -7,11 +7,16 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.media3.common.util.UnstableApi
 import app.castdlna.tv.player.ReproductorExo
 import app.castdlna.tv.upnp.Gena
 import app.castdlna.tv.upnp.Renderer
 import app.castdlna.tv.upnp.ServidorHttp
+import app.castdlna.tv.ui.EstadoPantalla
+import app.castdlna.tv.ui.faseDe
 import app.castdlna.tv.upnp.Ssdp
 import java.net.Inet4Address
 import java.util.UUID
@@ -31,7 +36,12 @@ object Receptor {
 
     @Volatile var reproductor: ReproductorExo? = null; private set
     @Volatile var nombre: String = "cast-dlna"; private set
-    @Volatile var enEspera: Boolean = true; private set
+
+    /** Lo que la pantalla observa; se recompone sola al cambiar. */
+    var estado by mutableStateOf(EstadoPantalla())
+        private set
+
+    private var direccion: String = ""
 
     private var ssdp: Ssdp? = null
     private var servidor: ServidorHttp? = null
@@ -87,17 +97,22 @@ object Receptor {
             ipActual = { ipLocal(app) },
         ).also { it.arrancar() }
 
-        Log.i(TAG, "receptor en marcha: $nombre — http://${ipLocal(app)}:$PUERTO")
+        direccion = "http://${ipLocal(app)}:$PUERTO"
+        Log.i(TAG, "receptor en marcha: $nombre — $direccion")
+        alCambiar()
 
+        // Late una vez por segundo mientras hay algo en marcha: los avisos
+        // solo salen cuando cambia el estado, y la posición cambia sola.
         thread(isDaemon = true, name = "receptor-latido") {
             while (true) {
                 Thread.sleep(1000)
-                if (reproductor?.estado in ESTADOS_ACTIVOS) renderer?.avisarCambio()
+                if (reproductor?.estado in ESTADOS_ACTIVOS) alCambiar()
             }
         }
     }
 
-    fun parar() {
+    /** Apaga el receptor entero; no confundir con parar la reproducción. */
+    fun apagar() {
         ssdp?.parar()
         servidor?.parar()
         reproductor?.soltar()
@@ -105,8 +120,23 @@ object Receptor {
     }
 
     private fun alCambiar() {
-        enEspera = reproductor?.estado in setOf("NO_MEDIA_PRESENT", "STOPPED", null)
-        renderer?.avisarCambio()
+        val p = reproductor
+        val r = renderer
+        if (p != null) {
+            estado = EstadoPantalla(
+                fase = faseDe(p.estado),
+                titulo = r?.tituloActual().orEmpty(),
+                posicionSeg = p.posicionSeg,
+                duracionSeg = p.duracionSeg,
+                volumen = p.volumen,
+                silenciado = p.silenciado,
+                esImagen = p.mostrandoImagen,
+                esDirecto = r?.esDirecto() ?: false,
+                nombreReceptor = nombre,
+                direccion = direccion,
+            )
+        }
+        r?.avisarCambio()
     }
 
     /** La dirección por la que se llega a la red local, sin depender del wifi. */
@@ -119,6 +149,21 @@ object Receptor {
             .filterIsInstance<Inet4Address>()
             .firstOrNull { !it.isLoopbackAddress }
             ?.hostAddress
+    }
+
+    fun reproducirOPausar() {
+        val p = reproductor ?: return
+        if (p.estado == "PLAYING") p.pausar() else p.reproducir()
+    }
+
+    fun buscarFraccion(fraccion: Float) {
+        val p = reproductor ?: return
+        val duracion = p.duracionSeg
+        if (duracion > 0) p.buscar((fraccion.coerceIn(0f, 1f) * duracion))
+    }
+
+    fun parar() {
+        reproductor?.parar()
     }
 
     private val ESTADOS_ACTIVOS = setOf("PLAYING", "TRANSITIONING")

@@ -111,6 +111,10 @@ class Renderer(
         if (delta.isNotEmpty()) eventos.getValue(servicio).publicar(delta)
     }
 
+    fun tituloActual(): String = media.titulo
+
+    fun esDirecto(): Boolean = media.directo
+
     fun estadoTexto(): String = buildString {
         appendLine("cast-dlna-tv")
         appendLine("estado : ${reproductor.estado}")

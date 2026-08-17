@@ -6,9 +6,40 @@ UPnP y, sobre todo, lo aprendido peleando con controladores reales.
 
 ## Estado
 
-El receptor responde las 27 acciones de `scripts/probe-renderer.py` del
-proyecto hermano y reproduce, pausa, busca y ajusta volumen. Falta la interfaz
-—irá con Wulfenite UI— y validar el descubrimiento SSDP fuera del emulador.
+Completo a falta de probarlo en una red de verdad. Responde las 27 acciones de
+`scripts/probe-renderer.py` del proyecto hermano, reproduce, pausa, busca y
+ajusta volumen, y la interfaz se maneja con el mando.
+
+Lo que queda por validar fuera del emulador:
+
+- **El descubrimiento SSDP.** El emulador está tras un NAT que el multicast no
+  atraviesa, así que aquí se prueba redirigiendo el puerto. Hace falta un
+  televisor o un teléfono en la misma red que el controlador.
+- **El compartir pantalla**, que necesita un emisor real.
+
+## La interfaz
+
+Una sola pantalla, con dos caras:
+
+- **A la espera** — el nombre con el que aparece en la lista del móvil y la
+  dirección donde escucha, que es lo que hace falta cuando algo no se ve.
+- **Reproduciendo** — el vídeo a pantalla completa y unos mandos que se asoman
+  al tocar el mando y se retiran solos a los cuatro segundos.
+
+Decisiones propias de televisión:
+
+| Detalle | Por qué |
+|---|---|
+| Teclas atendidas en la raíz | La primera pulsación no debería gastarse en despertar la interfaz: si los mandos están ocultos cualquier tecla los muestra, y si ya se ven, la tecla hace lo suyo |
+| Las de transporte actúan siempre | `play/pausa`, `stop` y avance rápido son inequívocas, se vean los mandos o no |
+| Zona segura de 48×27 dp | Muchos televisores recortan el borde de la imagen; nada legible puede apoyarse en el filo |
+| Degradado en lugar de superficie opaca | El vídeo sigue siendo el contenido: taparlo entero para enseñar dos botones es ponerse por delante de lo que se está mirando |
+| La pantalla no se apaga | Un receptor pasa horas con una imagen fija o en espera |
+| Controlador de ExoPlayer desactivado | No sigue las reglas de la casa ni el foco de la librería |
+
+La interfaz sale de **Wulfenite UI**, que se consume como artefacto:
+`./actualizar-wulfenite.sh` rehace el AAR cuando la librería cambie. La
+librería marca dos versiones del proyecto: `minSdk` 24 y Kotlin 2.2.
 
 ## Probar
 

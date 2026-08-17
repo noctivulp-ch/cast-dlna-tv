@@ -10,8 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "app.castdlna.tv"
-        // 21 es donde aparece Android TV; el receptor no necesita nada más nuevo.
-        minSdk = 21
+        // 24 lo marca Wulfenite, que es de donde sale la interfaz. Android TV
+        // arrancó en 21, pero el parque real de televisores está muy por
+        // encima y no compensa renunciar a la librería por cubrirlo.
+        minSdk = 24
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -36,9 +38,14 @@ android {
 }
 
 dependencies {
+    // Wulfenite se trae como artefacto: usa su propio catálogo de versiones y
+    // compartirlo obligaría a tocar su configuración. `actualizar-wulfenite.sh`
+    // rehace el AAR cuando la librería cambie.
+    implementation(files("libs/wulf-compose-release.aar"))
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")
-    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
