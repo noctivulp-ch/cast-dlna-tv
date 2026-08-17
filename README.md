@@ -55,9 +55,24 @@ adb -s emulator-5554 forward tcp:8201 tcp:8201
 ../cast-dlna/scripts/probe-renderer.py --url http://127.0.0.1:8201/device.xml --suite
 ```
 
-El emulador está tras un NAT, así que el descubrimiento por SSDP no llega desde
-la red local: se prueba redirigiendo el puerto. El descubrimiento hay que
-validarlo en un televisor de verdad o en un dispositivo Android normal.
+El emulador está tras el NAT de QEMU, así que **el multicast no cruza a la red
+local** — ni de ida ni de vuelta. Pero eso no deja el descubrimiento sin probar:
+dentro del emulador el multicast funciona, así que un M-SEARCH lanzado desde el
+propio emulador sí obtiene respuesta.
+
+```bash
+# Descubrimiento, desde dentro del emulador
+adb -s emulator-5554 shell "printf 'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 1\r\nST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n' | timeout 4 nc -u -w3 239.255.255.250 1900"
+```
+
+Cuidado con dos trampas medidas: el reenvío UDP de la consola del emulador
+**parece** funcionar pero lo contesta el receptor Chromecast de fábrica, no esta
+app; y en un Android TV hay dos procesos ligados al 1900, así que buscar
+`upnp:rootdevice` o `ssdp:all` no prueba nada de aquí.
+
+Lo único que de verdad necesita otro aparato es **castear desde fuera**. El
+detalle completo, las medidas y la tarea de puentear la red están en
+[`docs/red-del-emulador.md`](docs/red-del-emulador.md).
 
 ## Lo que hereda del receptor de escritorio
 
