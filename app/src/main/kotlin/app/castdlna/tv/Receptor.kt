@@ -46,6 +46,7 @@ object Receptor {
     private var ssdp: Ssdp? = null
     private var servidor: ServidorHttp? = null
     private var renderer: Renderer? = null
+    private var eventos: Map<String, Gena> = emptyMap()
     private var iniciado = false
 
     /**
@@ -72,7 +73,7 @@ object Receptor {
         val exo = ReproductorExo(app) { alCambiar() }
         reproductor = exo
 
-        val eventos = mapOf(
+        eventos = mapOf(
             "AVTransport" to Gena("AVTransport"),
             "RenderingControl" to Gena("RenderingControl"),
             "ConnectionManager" to Gena("ConnectionManager"),
@@ -103,10 +104,18 @@ object Receptor {
 
         // Late una vez por segundo mientras hay algo en marcha: los avisos
         // solo salen cuando cambia el estado, y la posición cambia sola.
+        // Cada vuelta va protegida: si una excepción escapa del hilo se lleva
+        // el proceso entero, y no vale la pena tumbar el receptor porque un
+        // aviso de estado no saliera.
         thread(isDaemon = true, name = "receptor-latido") {
             while (true) {
                 Thread.sleep(1000)
-                if (reproductor?.estado in ESTADOS_ACTIVOS) alCambiar()
+                try {
+                    if (reproductor?.estado in ESTADOS_ACTIVOS) alCambiar()
+                    else refrescarPantalla()
+                } catch (e: Exception) {
+                    Log.w(TAG, "latido: ${e.message}")
+                }
             }
         }
     }
@@ -120,6 +129,18 @@ object Receptor {
     }
 
     private fun alCambiar() {
+        refrescarPantalla()
+        renderer?.avisarCambio()
+    }
+
+    /**
+     * Solo la pantalla, sin avisar a nadie.
+     *
+     * Va aparte porque mientras se espera también cambia algo que merece verse
+     * —quién se ha suscrito— y no tendría sentido mandar un aviso de estado a
+     * los controladores cada segundo para reflejarlo.
+     */
+    private fun refrescarPantalla() {
         val p = reproductor
         val r = renderer
         if (p != null) {
@@ -134,9 +155,12 @@ object Receptor {
                 esDirecto = r?.esDirecto() ?: false,
                 nombreReceptor = nombre,
                 direccion = direccion,
+                // Basta con los de AVTransport: un controlador que va a mandar
+                // algo se suscribe siempre a ése. Los de volumen los pide solo
+                // parte de ellos, y contarlos aparte solo daría duplicados.
+                controladores = eventos["AVTransport"]?.suscriptores.orEmpty(),
             )
         }
-        r?.avisarCambio()
     }
 
     /** La dirección por la que se llega a la red local, sin depender del wifi. */

@@ -50,8 +50,17 @@ fun PantallaEspera(estado: EstadoPantalla, modifier: Modifier = Modifier) {
                         nivel = TalladoNivel.MARCADO,
                     )
                     Spacer(Modifier.height(WulfSpacing.paddingCelda))
+                    // Los dos momentos de la espera no son el mismo, y desde el
+                    // sofá la diferencia importa: «no me ve nadie» manda a
+                    // revisar la red, «te veo, dale tú» manda a mirar el móvil.
                     Text(
-                        "A la espera de recibir",
+                        when {
+                            !estado.hayControlador -> "A la espera de recibir"
+                            estado.controladores.size == 1 ->
+                                "Conectado desde ${estado.controladores.first()} — elige algo que enviar"
+                            else ->
+                                "Conectado desde ${estado.controladores.size} dispositivos — elige algo que enviar"
+                        },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,

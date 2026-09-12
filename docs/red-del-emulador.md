@@ -4,9 +4,13 @@ Medido el 2026-08-17 contra el AVD `tv` (Android 16, `sdk_google_atv64_x86_64`,
 1920×1080 @ 320 dpi) con cast-dlna-tv **en primer plano** y verificado con los
 contadores de `/proc/net/snmp` del propio emulador.
 
-**Resumen en una línea:** el descubrimiento SSDP **sí se puede probar en el
-emulador**, pero el controlador tiene que correr **dentro**. Lo que no cruza es
-el NAT hacia la LAN de casa.
+**Resumen en una línea:** el emulador ya está puenteado a la red ZeroTier y se
+le puede castear desde el teléfono (sección «El puente por ZeroTier»). Lo de
+abajo describe cómo se comporta la red interna del emulador **sin** ese puente.
+
+Sin puente, el descubrimiento SSDP **sí se puede probar en el emulador**, pero
+el controlador tiene que correr **dentro**: lo que no cruza es el NAT hacia la
+LAN de casa.
 
 ---
 
@@ -112,10 +116,11 @@ eso hace falta el puenteo de abajo, o instalar en hardware real.
 
 ---
 
-## Tarea: puentear la red del emulador a la LAN
+## Puentear la red del emulador: las opciones que se estudiaron
 
-Lo que sigue **no está hecho ni probado**. Es el terreno verificado y las
-opciones, para que quien lo monte no empiece de cero.
+Se acabó montando la **opción C**, que está en la sección siguiente. Lo que va
+aquí es por qué las otras dos se descartaron, que sigue valiendo si algún día
+cambia el entorno —por ejemplo, si aparece un cable.
 
 ### Lo que ya está disponible en esta máquina (comprobado)
 
@@ -158,25 +163,153 @@ así que se enruta y se relega el multicast a mano:
    medio. Es el fallo más probable de este camino, y no se ve en el
    descubrimiento: se ve después, como "aparece y no reproduce".
 
-**Opción C — ZeroTier.** Los overlays de ZeroTier **sí** son L2 y admiten puente
-y multicast. Si el teléfono de pruebas se une a la misma red ZeroTier, se puede
-puentear el TAP contra la interfaz `zt…` y evitar del todo el problema del wifi.
-Sin verificar, pero es la que menos pelea con el medio físico.
+**Opción C — ZeroTier.** Es la que se ha montado. Ver la sección siguiente.
+
+---
+
+## El puente por ZeroTier (opción C), montado
+
+Dos guiones en `scripts/`. El primero deja la red preparada, el segundo arranca
+el emulador dentro de ella y comprueba que se le puede castear.
+
+```bash
+sudo ./scripts/puente-zerotier.sh montar   # br-cast = ztu7tbxgmf + tap-tv, y el DHCP
+     ./scripts/emulador-en-zerotier.sh arrancar    # SIN sudo (ver más abajo)
+     ./scripts/emulador-en-zerotier.sh comprobar
+     ./scripts/emulador-en-zerotier.sh parar
+sudo ./scripts/puente-zerotier.sh desmontar       # deja la red como estaba
+```
+
+**Verificado el 2026-08-17, de punta a punta:** el emulador coge `10.123.72.242`
+por DHCP, hace ping al teléfono personal (`10.123.72.227`) con 3/3 y rtt 21–240
+ms, y el teléfono lo ve en su lista de dispositivos.
+
+### Lo medido antes de montarlo
+
+| Comprobación | Resultado |
+|---|---|
+| Teléfono personal alcanzable | **✓** `ping -I ztu7tbxgmf 10.123.72.227` 3/3, rtt 164–680 ms |
+| `ztu7tbxgmf` admite puente | **✓** `tun type tap`, `BROADCAST,MULTICAST,UP`, mtu 2800 |
+| Teléfono en la tabla de vecinos | **✓** `10.123.72.227 lladdr 7e:48:87:9c:90:a6` |
+| `-net-tap` en el emulador | **✓** |
+| Direcciones | PC `10.123.72.142`, teléfono `10.123.72.227` |
+
+El rtt de cientos de milisegundos importa: es un enlace por internet, no una
+LAN. El descubrimiento y el control lo aguantan; el *cast de pantalla* va a ir
+peor que en casa, y ese retraso será del enlace y no del receptor.
+
+### El paso que no puede dar el guion
+
+**Marcar el equipo como puente en ZeroTier.** En my.zerotier.com → la red →
+sección **Members** → desplegar la fila de esta PC (`10.123.72.142`) → casilla
+**`Active Bridge`**, entre `Authorized` y `Do Not Auto-Assign IPs`. Ese es el
+nombre exacto: no existe ninguna opción llamada «Allow Bridging», y buscarla
+hace perder el tiempo. Sin la casilla, ZeroTier descarta las tramas cuya MAC de
+origen no conoce —las del emulador son justo eso— y el puente queda mudo **sin
+dar ningún error**.
+
+### Qué va con `sudo` y qué no
+
+`puente-zerotier.sh` **sí** (crea interfaces, mueve direcciones, levanta el
+DHCP). `emulador-en-zerotier.sh` **no**, y no es un detalle de estilo: `sudo`
+vacía `DISPLAY`, `XAUTHORITY` y `XDG_RUNTIME_DIR`, así que el emulador arranca
+sin poder abrir ventana y parece que «no arranca» cuando el proceso está vivo.
+
+### El cortafuegos, que es el fallo que más despista
+
+Con `ufw` activo, los `DHCPDISCOVER` del emulador se descartan antes de llegar a
+dnsmasq. El síntoma engaña porque todo lo demás parece correcto: `tap-tv` en
+`LOWER_UP`, dnsmasq escuchando en `0.0.0.0:67`, y el emulador pidiendo dirección
+en bucle —`DhcpClient: Broadcasting DHCPDISCOVER` en su logcat— sin que nadie
+conteste. El guion lo abre solo:
+
+```bash
+ufw allow in on br-cast to any port 67 proto udp
+```
+
+Solo hace falta para el puente. El tráfico entre el emulador y el teléfono va
+**puenteado** y no pasa por netfilter —`br_netfilter` no está cargado—, así que
+el cortafuegos no lo toca.
+
+### Por qué hace falta un DHCP propio
+
+La imagen del AVD no deja `adb root` («adbd cannot run as root in production
+builds»), así que no hay forma de escribirle una dirección estática desde fuera,
+y ZeroTier asigna las suyas por su controlador —que no llega a un invitado
+puenteado—. De ahí el `dnsmasq` acotado a `br-cast` con un rango de cuatro
+direcciones altas.
+
+Servir DHCP sobre un puente que da a una red ajena suena arriesgado y conviene
+saber por qué no lo es aquí: **los miembros de ZeroTier reciben su dirección del
+controlador y nunca emiten un DHCP DISCOVER**, así que el único que va a aceptar
+la oferta es el emulador. Aun así el guion lo levanta y lo mata con el emulador,
+en vez de dejarlo puesto.
+
+### La salida a la LAN de casa, sin la cual conecta pero no reproduce
+
+El puente mete al emulador en la red de ZeroTier, pero **el medio no viaja por
+ahí**. Quien manda el vídeo anuncia la URL con *su* dirección de la wifi de
+casa —CastLab mandó `http://192.168.0.11:9125/…`—, y el emulador, que solo está
+en `10.123.72.0/24`, no tiene forma de llegar. El síntoma es engañoso porque
+todo lo visible funciona: el teléfono lo encuentra, conecta, dice que envía, y
+la pantalla se queda **en negro y sin audio** con cualquier medio.
+
+Se resuelve dando salida al emulador a través de la PC, que está en las dos
+redes. Lo hace `puente-zerotier.sh montar`:
+
+```bash
+sysctl -w net.ipv4.ip_forward=1
+iptables -t nat -A POSTROUTING -s 10.123.72.0/24 -o wlan0 -j MASQUERADE
+ufw route allow in on br-cast out on wlan0
+```
+
+Se traduce en origen —y no se enruta a secas— porque el router de casa no sabe
+devolver tráfico a `10.123.72.0/24`. La ruta por defecto ya la da el DHCP
+(`option 3`), y se comprueba en el emulador con `ip route show table all`.
+
+### «Reproduce pero no suena» no es un fallo de la app
+
+PipeWire guarda el volumen **por aplicación**. Si el flujo de `qemu-system-x86_64`
+quedó a cero alguna vez, se queda a cero en todos los arranques siguientes, y el
+síntoma despista mucho: ExoPlayer decodifica —se ve el `c2.android.aac.decoder`
+en el logcat—, la posición avanza y el volumen de Android está bien. Lo delata
+`pactl list sink-inputs`, con `Volume: … 0% / -inf dB` y `Mute: no`.
+
+`emulador-en-zerotier.sh comprobar` lo mira y lo corrige solo.
+
+### Manejar el emulador sin su ventana de controles
+
+En Niri/Wayland con XWayland satélite, la ventana de controles extendidos del
+emulador no responde bien. No hace falta: `scripts/mando.sh` hace lo mismo por
+adb, y de paso sirve igual contra un televisor real.
+
+```bash
+./scripts/mando.sh app            # trae cast-dlna-tv al frente
+./scripts/mando.sh abajo abajo ok # el D-pad, encadenable
+./scripts/mando.sh foto           # captura la pantalla
+./scripts/mando.sh que-hay        # qué app está en primer plano
+```
+
+La captura es además la forma honesta de comprobar la interfaz: enseña qué se
+está viendo de verdad, sin depender de que la ventana pinte bien.
 
 ### Cómo saber que funcionó
 
-Tres comprobaciones, en orden. Las dos primeras salen de este documento:
+Las tres primeras las hace `emulador-en-zerotier.sh comprobar`; la cuarta es
+manual porque hace falta el teléfono:
 
-1. **El host ve los anuncios.** Escuchando en `239.255.255.250:1900` unido al
-   grupo por `wlan0`, tienen que aparecer paquetes con origen en la subred del
-   emulador. Hoy solo aparecen los del router (192.168.0.1).
+1. **El emulador cogió dirección de la red ZeroTier.** Si `eth0` sigue en
+   `10.0.2.x`, el TAP no llegó al DHCP y lo demás no va a funcionar.
 2. **Un M-SEARCH multicast desde el host recibe respuesta de la app** para
    `urn:schemas-upnp-org:device:MediaRenderer:1` — y con `SERVER: …
    cast-dlna-tv/1.0`, **no** con `Chromecast/…`. Ese detalle es el que distingue
-   haber puenteado de estar hablando con DIAL.
-3. **Un controlador del teléfono lo encuentra y reproduce.** Es lo único que
-   valida la opción B de punta a punta, porque es lo que ejercita que el
-   `LOCATION` anunciado sea alcanzable.
+   haber puenteado de estar hablando con DIAL. Se busca ese tipo y no
+   `upnp:rootdevice` precisamente porque solo lo sirve nuestra app.
+3. **El `LOCATION` anunciado es alcanzable.** `curl` al `device.xml` en la
+   dirección del emulador. Descubrir y no poder leer el descriptor es el fallo
+   típico de estos montajes: aparece en la lista del móvil y luego no reproduce.
+4. **Un controlador del teléfono lo encuentra y reproduce.** Lo único que valida
+   el camino entero.
 
 ### Antes de dar por bueno un fallo
 

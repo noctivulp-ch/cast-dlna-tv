@@ -29,6 +29,20 @@ class Gena(private val servicio: String) {
 
     private val suscripciones = ConcurrentHashMap<String, Suscripcion>()
 
+    /**
+     * Desde qué máquinas hay controladores pendientes de avisos.
+     *
+     * Es lo más cercano a «quién está conectado» que existe en DLNA: el
+     * protocolo no abre una sesión, cada orden llega suelta. Pero un
+     * controlador que se suscribe está diciendo que quiere seguir el estado, y
+     * mientras no caduque su suscripción sigue ahí. Pueden ser varios a la vez
+     * —nada impide que dos móviles miren el mismo receptor—, de ahí la lista.
+     */
+    val suscriptores: List<String>
+        get() = suscripciones.values
+            .mapNotNull { s -> runCatching { URL(s.callbacks.first()).host }.getOrNull() }
+            .distinct()
+
     init {
         thread(name = "gena-caducidad", isDaemon = true) {
             while (true) {

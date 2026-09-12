@@ -21,7 +21,13 @@ data class EstadoPantalla(
     val esDirecto: Boolean = false,
     val nombreReceptor: String = "",
     val direccion: String = "",
+    /** Máquinas de los controladores que siguen el estado del receptor. */
+    val controladores: List<String> = emptyList(),
 ) {
+    /** Hay alguien pendiente, aunque todavía no haya mandado nada. */
+    val hayControlador: Boolean
+        get() = controladores.isNotEmpty()
+
     val avance: Float
         get() = if (duracionSeg > 0) (posicionSeg / duracionSeg).toFloat().coerceIn(0f, 1f) else 0f
 

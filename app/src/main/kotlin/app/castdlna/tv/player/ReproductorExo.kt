@@ -14,6 +14,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import app.castdlna.tv.upnp.Media
 import app.castdlna.tv.upnp.Reproductor
 
+/** Doce horas: una foto en pantalla no se acaba, la quita quien la puso. */
+private const val DURACION_IMAGEN_MS = 12L * 60 * 60 * 1000
+
 /**
  * Reproductor sobre ExoPlayer.
  *
@@ -99,6 +102,19 @@ class ReproductorExo(
     private fun elementoDe(uri: String, media: Media): MediaItem {
         val constructor = MediaItem.Builder().setUri(uri)
 
+        if (media.esImagen) {
+            // Media3 no muestra una imagen si no se le dice cuánto debe durar:
+            // sin esto se prepara, no selecciona la pista y deja la pantalla en
+            // negro, sin dar ningún error que lo delate. Como en DLNA una foto
+            // se queda puesta hasta que llegue otra cosa o paren el envío, se
+            // declara una duración larga en vez de una real.
+            constructor.setImageDurationMs(DURACION_IMAGEN_MS)
+            // El tipo va explícito porque la URL puede no acabar en .jpg —los
+            // servidores de los móviles sirven con nombres sin extensión— y sin
+            // él la detección se queda a merced de lo que adivine el extractor.
+            mimeDeImagen(media.mime, uri)?.let { constructor.setMimeType(it) }
+        }
+
         if (media.directo) {
             // El desfase objetivo y el margen de velocidad son lo que mantiene
             // acotado el retraso de un directo sin dar saltos.
@@ -124,6 +140,20 @@ class ReproductorExo(
             )
         }
         return constructor.build()
+    }
+
+    private fun mimeDeImagen(mimeDeclarado: String, url: String): String? {
+        if (mimeDeclarado.startsWith("image/")) return mimeDeclarado
+        val limpio = url.lowercase().substringBefore('?')
+        return when {
+            limpio.endsWith(".jpg") || limpio.endsWith(".jpeg") -> MimeTypes.IMAGE_JPEG
+            limpio.endsWith(".png") -> MimeTypes.IMAGE_PNG
+            limpio.endsWith(".webp") -> MimeTypes.IMAGE_WEBP
+            limpio.endsWith(".bmp") -> MimeTypes.IMAGE_BMP
+            limpio.endsWith(".heic") || limpio.endsWith(".heif") -> MimeTypes.IMAGE_HEIF
+            limpio.endsWith(".avif") -> MimeTypes.IMAGE_AVIF
+            else -> null
+        }
     }
 
     private fun mimeDeSubtitulo(url: String): String {

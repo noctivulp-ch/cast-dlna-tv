@@ -43,6 +43,9 @@ class ServidorHttp(
     private var servidor: ServerSocket? = null
     @Volatile private var enMarcha = false
 
+    /** Las últimas peticiones, la más reciente primero. Ver [anotar]. */
+    val ultimas = ArrayDeque<String>()
+
     fun arrancar() {
         if (enMarcha) return
         enMarcha = true
@@ -66,28 +69,37 @@ class ServidorHttp(
     }
 
     private fun atender(cliente: Socket) {
-        cliente.use { socket ->
-            socket.soTimeout = 15_000
-            socket.tcpNoDelay = true
-            val entrada = BufferedReader(InputStreamReader(socket.getInputStream()))
-            val salida = socket.getOutputStream()
-            val ip = socket.inetAddress.hostAddress.orEmpty()
-            // Se atienden varias peticiones por conexión, que es lo que
-            // anuncia la cabecera. Cerrar tras la primera mientras se dice
-            // `keep-alive` deja al controlador esperando una respuesta que no
-            // llega, y los que comprueban el receptor a cada vuelta reutilizan
-            // la conexión precisamente para eso.
-            while (enMarcha) {
-                val peticion = leer(entrada, ip) ?: break
-                try {
-                    responder(peticion, salida)
-                } catch (e: Exception) {
-                    Log.w(TAG, "fallo atendiendo ${peticion.ruta}: ${e.message}")
-                    break
+        // Todo el diálogo va envuelto, y no solo el responder: un controlador
+        // que deja la conexión abierta sin pedir nada —cosa que hacen, es para
+        // lo que sirve el keep-alive— agota el soTimeout y `leer` lanza. Una
+        // excepción que escapa de un hilo se lleva por delante el proceso
+        // entero, así que ese timeout perfectamente normal tumbaba el receptor.
+        try {
+            cliente.use { socket ->
+                socket.soTimeout = 15_000
+                socket.tcpNoDelay = true
+                val entrada = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val salida = socket.getOutputStream()
+                val ip = socket.inetAddress.hostAddress.orEmpty()
+                // Se atienden varias peticiones por conexión, que es lo que
+                // anuncia la cabecera. Cerrar tras la primera mientras se dice
+                // `keep-alive` deja al controlador esperando una respuesta que
+                // no llega, y los que comprueban el receptor a cada vuelta
+                // reutilizan la conexión precisamente para eso.
+                while (enMarcha) {
+                    val peticion = leer(entrada, ip) ?: break
+                    try {
+                        responder(peticion, salida)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "fallo atendiendo ${peticion.ruta}: ${e.message}")
+                        break
+                    }
+                    salida.flush()
+                    if (peticion.cabeceras["connection"]?.lowercase() == "close") break
                 }
-                salida.flush()
-                if (peticion.cabeceras["connection"]?.lowercase() == "close") break
             }
+        } catch (e: Exception) {
+            Log.d(TAG, "conexión terminada: ${e.message}")
         }
     }
 
@@ -121,7 +133,27 @@ class ServidorHttp(
         return Peticion(partes[0].uppercase(), partes[1], cabeceras, cuerpo, ip)
     }
 
-    private fun responder(p: Peticion, salida: OutputStream) = when (p.metodo) {
+    private fun responder(p: Peticion, salida: OutputStream): Unit = anotar(p).let { responderA(p, salida) }
+
+    /**
+     * Deja constancia de lo que pide cada controlador.
+     *
+     * Vale la pena tenerlo siempre y no solo al depurar: los controladores no
+     * se comportan igual —unos se suscriben a los eventos y otros preguntan en
+     * bucle— y sin ver sus peticiones no hay forma de saber por qué uno se
+     * entera de que el vídeo acabó y otro se queda con los mandos puestos.
+     */
+    private fun anotar(p: Peticion) {
+        val accion = p.cabeceras["soapaction"]?.substringAfterLast('#')?.trim('"').orEmpty()
+        val linea = "${p.ipCliente} ${p.metodo} ${p.ruta}" + if (accion.isNotEmpty()) " $accion" else ""
+        Log.i(TAG, linea)
+        synchronized(ultimas) {
+            ultimas.addFirst(linea)
+            while (ultimas.size > MAX_ANOTADAS) ultimas.removeLast()
+        }
+    }
+
+    private fun responderA(p: Peticion, salida: OutputStream) = when (p.metodo) {
         "GET", "HEAD" -> recurso(p, salida)
         "POST" -> control(p, salida)
         "SUBSCRIBE" -> suscribir(p, salida)
@@ -245,6 +277,8 @@ class ServidorHttp(
     }
 
     private companion object {
+        /** Lo que cabe leer de un vistazo; más es ruido de sondeo repetido. */
+        const val MAX_ANOTADAS = 50
         val SERVICIOS = mapOf(
             "avt" to ("AVTransport" to Servicios.AVT),
             "rcs" to ("RenderingControl" to Servicios.RCS),
