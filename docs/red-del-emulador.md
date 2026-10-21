@@ -1,5 +1,8 @@
 # La red del emulador, y qué se puede probar en ella
 
+> Describe el entorno de pruebas del autor (emulador y red de pruebas). Los scripts que se
+> mencionan son herramientas de ese entorno y no se publican con el repositorio.
+
 Medido el 2026-08-17 contra el AVD `tv` (Android 16, `sdk_google_atv64_x86_64`,
 1920×1080 @ 320 dpi) con cast-dlna-tv **en primer plano** y verificado con los
 contadores de `/proc/net/snmp` del propio emulador.

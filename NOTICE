@@ -1,0 +1,20 @@
+cast-dlna-tv
+Copyright (C) 2026 NoctiVulp
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version.
+SPDX-License-Identifier: GPL-3.0-or-later
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+El nombre «NoctiVulp», el de este programa y sus logotipos no se licencian: ver TRADEMARKS.md.
+
+Componentes de terceros
+-----------------------
+
+- Wulfenite UI (wulf-compose, app/libs/) — LGPL-3.0-or-later, de NoctiVulp
+- AndroidX: Core, Activity, Lifecycle, Compose UI, Material 3 — Apache-2.0
+- AndroidX Media3 (ExoPlayer, HLS, OkHttp, UI) — Apache-2.0
+- JUnit (solo pruebas) — EPL-2.0
