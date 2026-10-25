@@ -20,6 +20,16 @@ aprendido con controladores reales, y añade lo propio de la televisión: una so
 una cara «a la espera» que muestra el nombre y la dirección del receptor, y una cara
 «reproduciendo» con mandos que aparecen al tocar el mando y se retiran solos.
 
+<p align="center">
+  <img src="docs/capturas/espera-reproduciendo.png" width="100%" alt="Las dos caras del receptor: arriba a la espera, abajo reproduciendo">
+</p>
+<p align="center">
+  <img src="docs/capturas/espera.png" width="49%" alt="Cara a la espera, con el nombre y la dirección del receptor">
+  <img src="docs/capturas/reproduciendo.png" width="49%" alt="Cara reproduciendo, con los mandos a la vista">
+</p>
+
+<p align="center"><sub>En el emulador de Android TV, con un vídeo de prueba enviado por SOAP. Las capturas se regeneran con <code>tools/capturas/capturas.sh</code>.</sub></p>
+
 ## Funciones principales
 
 - `MediaRenderer:1` (DMR-1.50): reproducción, pausa, búsqueda y volumen.
